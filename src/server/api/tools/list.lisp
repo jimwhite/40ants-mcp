@@ -8,6 +8,8 @@
                 #:method-thunk)
   (:import-from #:openrpc-server/discovery
                 #:rpc-discover)
+  (:import-from #:openrpc-server/interface
+                #:transform-result)
   (:import-from #:log)
   (:import-from #:serapeum
                 #:fmt
@@ -153,3 +155,20 @@
                   (server-tools-collections mcp-server))))
     (make-instance 'tools-list-response
                    :tools tools)))
+
+;;; ---------------------------------------------------------------------------
+;;; Custom JSON encoding to fix "required": null -> "required": []
+;;; JSON Schema requires "required" to be an array, not null.
+;;; ---------------------------------------------------------------------------
+
+;; Override transform-result for input-schema to fix nil -> empty array
+(defmethod openrpc-server/interface:transform-result ((schema input-schema))
+  "Transform input-schema with proper empty array for required field."
+  (let ((result (make-hash-table :test 'equal)))
+    (setf (gethash "type" result) (slot-value schema 'type))
+    (setf (gethash "properties" result) 
+          (openrpc-server/interface:transform-result (slot-value schema 'properties)))
+    ;; Fix: use empty vector for nil (becomes [] in JSON, not null)
+    (let ((required (slot-value schema 'required)))
+      (setf (gethash "required" result) (or required #())))
+    result))
